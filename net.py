@@ -118,9 +118,11 @@ def create_r3d(
     workspace=512,
 ):
     # Begin Layers
-    data = mx.sym.var('data', dtype=np.float32)
+    data = mx.sym.var('data', dtype=np.float32) # shape [3,32,112,112]
     body = mx.sym.Convolution(data=data, num_filter=45, kernel=(1, 7, 7), stride=(1, 2, 2),
                               pad=(0, 3, 3), no_bias=no_bias, cudnn_tune=cudnn_tune, workspace=workspace, name="conv1_middle")
+    # shape =[45,32,56,56]
+
     body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=1e-3, momentum=bn_mom, name='conv1_middle_spatbn_relu')
     body = mx.sym.Activation(data=body, act_type='relu')
 
@@ -129,6 +131,7 @@ def create_r3d(
                               pad=(1, 0, 0), no_bias=no_bias, cudnn_tune=cudnn_tune, workspace=workspace, name="conv1")
     body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=1e-3, momentum=bn_mom, name='conv1_spatbn_relu')
     body = mx.sym.Activation(data=body, act_type='relu')
+    # shape =[45,32,56,56]
 
     (n1, n2, n3, n4) = BLOCK_CONFIG[model_depth]
 
@@ -138,22 +141,25 @@ def create_r3d(
     # conv_2x
     for _ in range(n1):
         body = builder.add_r3d_block(body, 64, 64)
+    # shape = [64,32,56,56]
 
     # conv_3x
-    body = builder.add_r3d_block(body, 64, 128, down_sampling=True)
+    body = builder.add_r3d_block(body, 64, 128, down_sampling=True)  # outshape =[128,16,28,28]
+    # shape =[128,
     for _ in range(n2 - 1):
-        body = builder.add_r3d_block(body, 128, 128)
+        body = builder.add_r3d_block(body, 128, 128) # outshape =[128,16,28,28]
 
     # conv_4x
-    body = builder.add_r3d_block(body, 128, 256, down_sampling=True)
+    body = builder.add_r3d_block(body, 128, 256, down_sampling=True) # [256,8,14,14]
     for _ in range(n3 - 1):
-        body = builder.add_r3d_block(body, 256, 256)
+        body = builder.add_r3d_block(body, 256, 256) # outshape =[256,8,14,14]
 
     # conv_5x
-    body = builder.add_r3d_block(body, 256, 512, down_sampling=True)
+    body = builder.add_r3d_block(body, 256, 512, down_sampling=True) # outshape=[512,4,7,7]
     for _ in range(n4 - 1):
-        body = builder.add_r3d_block(body, 512, 512)
+        body = builder.add_r3d_block(body, 512, 512) # outshape [512,4,7,7]
 
+    print(builder.comp_count)
     # Final Layers
     body = mx.sym.Pooling(data=body, kernel=(final_temporal_kernel, final_spatial_kernel, final_spatial_kernel),
                                 stride=(1, 1, 1), pad=(0, 0, 0), pool_type='avg', name='final_pool')
@@ -164,3 +170,8 @@ def create_r3d(
     return output
 
 
+
+if __name__ == '__main__':
+    net = create_r3d(101,model_depth=34)
+    print(net)
+    print(dir(net))

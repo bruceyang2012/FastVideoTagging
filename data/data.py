@@ -29,6 +29,15 @@ class ClipBatchIter(mx.io.DataIter):
         self.train = train
         self.clip_p = 0
         self.clip_lst = []
+
+
+        # self.text_datadir = os.path.join(datadir,'ucfTrainTestlist')
+        # if self.train:
+        #     self.video_dir = os.path.join(datadir,'train')
+        # else:
+        #     self.video_dir = os.path.join(datadir,'test')
+        # self.datadir = self.text_datadir
+        self.video_dir = self.datadir
         self.load_data()
         self.reset()
 
@@ -47,20 +56,20 @@ class ClipBatchIter(mx.io.DataIter):
         with open(os.path.join(self.datadir, 'classInd.txt')) as fin:
             for i, nm in csv.reader(fin, delimiter=' '):
                 id2class_name[int(i) - 1] = nm
-            for i in xrange(len(id2class_name)):
+            for i in range(len(id2class_name)):
                 class_names.append(id2class_name[i])
 
         if self.train:
             with open(os.path.join(self.datadir, 'trainlist01.txt')) as fin:
                 for nm, c in csv.reader(fin, delimiter=' '):
-                    self.clip_lst.append((os.path.join(self.datadir, nm), int(c) - 1))
+                    self.clip_lst.append((os.path.join(self.video_dir, nm), int(c) - 1))
         else:
             with open(os.path.join(self.datadir, 'testlist01.txt')) as fin:
                 for nm, in csv.reader(fin, delimiter=' '):
                     c = nm[:nm.find('/')]
-                    self.clip_lst.append((os.path.join(self.datadir, nm), class_names.index(c)))
+                    self.clip_lst.append((os.path.join(self.video_dir, nm), class_names.index(c)))
 
-        logger.info("load data from %s, num clip_lst %d" % (self.datadir, len(self.clip_lst)))
+        logger.info("load data from %s, num clip_lst %d" % (self.video_dir, len(self.clip_lst)))
 
 
     def reset(self):

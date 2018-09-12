@@ -3,7 +3,8 @@
 
 import cv2
 import logging
-import cPickle as pickle
+
+import pickle
 from pprint import pprint
 import mxnet as mx
 logger = logging.getLogger(__name__)
@@ -13,11 +14,11 @@ def load_from_caffe2_pkl(filepath, net):
     args_loaded = {}
     auxs_loaded = {}
 
-    with open(filepath, 'r') as fopen:
-        blobs = pickle.load(fopen)['blobs']
+    with open(filepath, 'rb') as fopen:
+        blobs = pickle.load(fopen,encoding='latin1')['blobs']
     print("len of blobs %d" % len(blobs))
 
-    for k, v in blobs.iteritems():
+    for k, v in blobs.items():
         if k.endswith('_w'):
             args_loaded[k[:-2] + '_weight'] = mx.nd.array(v)
         if k.endswith('_b'):

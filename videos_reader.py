@@ -8,21 +8,25 @@ import ctypes
 import numpy as np
 import cv2
 import random
-
+import os
 logger = logging.getLogger(__name__)
 
-PROCESSES = 64
+PROCESSES = 32
 MAX_FLOAT_NUM = 1024 * 3 * 32 * 224 * 224
 ret_base = mp.RawArray(ctypes.c_float, MAX_FLOAT_NUM)
 counter = mp.RawValue(ctypes.c_int, 0)
 
 
-def sample_clip_func((filename, p, batch_size, n_frame, crop_size, scale_w, scale_h, is_train, temporal_center)):
+def sample_clip_func(args):
+    filename, p, batch_size, n_frame, crop_size, scale_w, scale_h, is_train, temporal_center = args
     ret = np.frombuffer(ret_base, dtype=np.float32, count=batch_size * 3 * n_frame * crop_size * crop_size).reshape(
         (batch_size, 3, n_frame, crop_size, crop_size))
 
     tmp = None
     while tmp is None:
+        if not os.path.exists(filename):
+            print("the file not exist")
+            return
         v = cv2.VideoCapture(filename)
         width, height, length = v.get(cv2.CAP_PROP_FRAME_WIDTH), v.get(cv2.CAP_PROP_FRAME_HEIGHT), \
                                 v.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -47,7 +51,7 @@ def sample_clip_func((filename, p, batch_size, n_frame, crop_size, scale_w, scal
         tmp = np.zeros((n_frame, crop_size, crop_size, 3), dtype=np.float32)
         v.set(cv2.CAP_PROP_POS_FRAMES, frame_st)
 
-        for frame_p in xrange(min(n_frame, length)):
+        for frame_p in range(min(n_frame, length)):
             _, f = v.read()
             if f is not None:
                 f = cv2.resize(f, (scale_w, scale_h))
@@ -62,7 +66,7 @@ def sample_clip_func((filename, p, batch_size, n_frame, crop_size, scale_w, scal
     if length < n_frame:
         tmp[-(n_frame - length):] = tmp[:(n_frame - length)]
 
-    tmp = tmp.transpose((3, 0, 1, 2))
+    tmp = tmp.transpose((3, 0, 1, 2)) #from DHWC to CDHW
     # now tmp is C,D,H,W
 
     # random flip the video horizontally
@@ -77,9 +81,9 @@ def sample_clips(filenames, batch_size, n_frame, crop_size, scale_w=171, scale_h
     ret = np.frombuffer(ret_base, dtype=np.float32, count=batch_size * 3 * n_frame * crop_size * crop_size).reshape(
         (batch_size, 3, n_frame, crop_size, crop_size))
     process_pool.map(sample_clip_func, [(filenames[p], p, batch_size, n_frame, crop_size, scale_w, scale_h, is_train,
-                                         temporal_center) for p in xrange(len(filenames))])
+                                         temporal_center) for p in range(len(filenames))])
 
-    # for p in xrange(len(filenames)):
+    # for p in range(len(filenames)):
     #     sample_clip_func((filenames[p], p, batch_size, n_frame, crop_size, scale_w, scale_h, is_train))
     if counter.value and counter.value % 10 == 0:
         logger.info("Invalid counter %d" % counter.value)

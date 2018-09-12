@@ -8,7 +8,7 @@ import sys
 import mxnet as mx
 from utils import inspect_net, load_from_caffe2_pkl
 from net import create_r3d
-from data import ClipBatchIter
+
 
 
 def train(args):
@@ -56,7 +56,7 @@ def train(args):
         v = mx.viz.plot_network(net, title='R2Plus1D-train',
                                 shape={'data': (total_batch_size, 3, args.n_frame, args.crop_size, args.crop_size)})
         v.render(filename='models/R2Plus1D-train', cleanup=True)
-
+    from data import ClipBatchIter
     train_data = mx.io.PrefetchingIter(ClipBatchIter(datadir=args.datadir, batch_size=total_batch_size,
                                                      n_frame=args.n_frame, crop_size=args.crop_size, train=True,
                                                      scale_w=args.scale_w, scale_h=args.scale_h))
@@ -98,8 +98,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="command for training p3d network")
     parser.add_argument('--gpus', type=str, default='0', help='the gpus will be used, e.g "0,1,2,3"')
     parser.add_argument('--plot', type=int, default=0, help='plot the network architecture')
-    parser.add_argument('--pretrained', type=str, default='', help='pretrained model path')
-    parser.add_argument('--datadir', type=str, default='/mnt/truenas/scratch/yijiewang/deep-video/deep-p3d/UCF101/',
+    parser.add_argument('--pretrained', type=str, default='./r2.5d_d34_l32.pkl', help='pretrained model path')
+    parser.add_argument('--datadir', type=str, default='/data/jh/notebooks/hudengjun/DeepVideo/UCF-101',
                         help='the UCF101 datasets directory')
     parser.add_argument('--output', type=str, default='./output/', help='the output directory')
     parser.add_argument('--optimizer', type=str, default='sgd', help='optimizer')
@@ -115,7 +115,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=16, help='the batch size')
     parser.add_argument('--num_class', type=int, default=101, help='the number of class')
     parser.add_argument('--model_depth', type=int, default=34, help='network depth')
-    parser.add_argument('--num_epoch', type=int, default=90, help='the number of epoch')
+    parser.add_argument('--num_epoch', type=int, default=80, help='the number of epoch')
     parser.add_argument('--epoch_size', type=int, default=100000, help='the number of epoch')
     parser.add_argument('--begin_epoch', type=int, default=0, help='begin training from epoch begin_epoch')
     parser.add_argument('--n_frame', type=int, default=32, help='the number of frame to sample from a video')

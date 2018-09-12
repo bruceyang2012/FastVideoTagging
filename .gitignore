@@ -3,8 +3,9 @@
 
 # OS or IDE generated files
 .idea
-
-
-
+*.out
+*.pkl
+output/*.*
+.gitignore
 
 

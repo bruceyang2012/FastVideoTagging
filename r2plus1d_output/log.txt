@@ -1,0 +1,50 @@
+INFO:root:train.py --gpus 2,3 --pretrained r2.5d_d34_132.pkl --output ./r2plus1d_output --batch_per_device 4 --lr 1e-4 --model_depth 34 --wd 0.005 --num_class 101 --num_epoch 80
+INFO:root:Namespace(batch_per_device=4, batch_size=16, begin_epoch=0, bn_mom=0.9, crop_size=112, cudnn_tune='off', datadir='/data/jh/notebooks/hudengjun/DeepVideo/ucf101', epoch_size=100000, gpus='2,3', lr=0.0001, lr_scheduler_factor=0.1, lr_scheduler_step=0, model_depth=34, momentum=0.9, n_frame=32, num_class=101, num_epoch=80, optimizer='sgd', output='./r2plus1d_output', plot=0, pretrained='r2.5d_d34_132.pkl', scale_h=128, scale_w=171, wd=0.005, workspace=512)
+INFO:root:number of gpu 2
+INFO:root:Running on GPUs: [2, 3]
+INFO:root:Using epoch size: 100000
+INFO:net:Number of middle filters: 144
+INFO:net:Number of middle filters: 144
+INFO:net:Number of middle filters: 144
+INFO:net:Number of middle filters: 144
+INFO:net:Number of middle filters: 144
+INFO:net:Number of middle filters: 144
+INFO:net:Number of middle filters: 230
+INFO:net:Number of middle filters: 288
+INFO:net:Number of middle filters: 288
+INFO:net:Number of middle filters: 288
+INFO:net:Number of middle filters: 288
+INFO:net:Number of middle filters: 288
+INFO:net:Number of middle filters: 288
+INFO:net:Number of middle filters: 288
+INFO:net:Number of middle filters: 460
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 576
+INFO:net:Number of middle filters: 921
+INFO:net:Number of middle filters: 1152
+INFO:net:Number of middle filters: 1152
+INFO:net:Number of middle filters: 1152
+INFO:net:Number of middle filters: 1152
+INFO:net:Number of middle filters: 1152
+INFO:utils:symbol has 349 = 211 arg + 138 aux
+INFO:utils:model loaded has 347 = 209 arg + 138 aux
+INFO:utils:testing arg loaded
+INFO:utils:arg data not loaded
+INFO:utils:arg final_fc_weight not loaded
+INFO:utils:arg final_fc_bias not loaded
+INFO:utils:arg softmax_label not loaded
+INFO:utils:testing arg used in net
+INFO:utils:arg last_out_L400_weight not used in net
+INFO:utils:arg last_out_L400_beta not used in net
+INFO:utils:testing aux
+INFO:root:load pretrained okay, num of arg_p 209, num of aux_p 138
+INFO:data:load data from /data/jh/notebooks/hudengjun/DeepVideo/ucf101/train, num clip_lst 9537

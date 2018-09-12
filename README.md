@@ -40,7 +40,19 @@ Assume the training output directory is ~/r2plus1d_output and the epoch number w
 ```
 $ python validation.py --gpus 0 --output ~/r2plus1d_output --eval_epoch 80 --batch_per_device 48 --model_prefix test 
 ```
+# The second implementation of R2+1D mxnet edition
 
+### training and validation
+```angular2html
+$ python train_r3d.py --gpus 1,2 --pretrained model.params
+```
+## To do works
+1.change the dataloder to nvvl  
+2.add a multi-label classification loss header  
+3.train a model with data meitu shot videos  
+
+## origin data  
+- origin train log  in /data/jh/notebooks/hudengjun/VideosFamous/R2Plus1D-MXNet
 
 
 
