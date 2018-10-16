@@ -1,0 +1,11 @@
+pandas
+numpy
+Pillow
+opencv-python
+gluonbook
+mxnet-cu90
+ipdb
+tqdm
+gluonbook
+argparse
+

@@ -16,11 +16,15 @@ logger = logging.getLogger(__name__)
 
 
 
+# datadir = '/data/jh/notebooks/hudengjun/meitu'
+# video_data = '/data/jh/notebooks/hudengjun/meitu/videos/train_collection'
+# val_data = '/data/jh/notebooks/hudengjun/meitu/videos/val_collection'
+# train_label = '/data/jh/notebooks/hudengjun/meitu/DatasetLabels/shor-xxxx.txt'
 
-class UCF101(Dataset):
+class SimpleMeitu(Dataset):
     def __init__(self,datadir,n_frame=32,crop_size=112,
                  scale_w=171,scale_h=128,train=True,transform=None):
-        super(UCF101,self).__init__()
+        super(SimpleMeitu,self).__init__()
         self.datadir = datadir
         self.n_frame = n_frame
         self.crop_size = crop_size
@@ -29,29 +33,26 @@ class UCF101(Dataset):
         self.is_train = train
         self.clip_lst = []
         self._transform = transform
+        self.max_label =0
         self.load_list()
 
 
     def load_list(self):
         """load all the video informatin in the file list"""
-        id2class_name = {}
-        class_names = []
-        with open(os.path.join(self.datadir, 'classInd.txt')) as fin:
-            for i, nm in csv.reader(fin, delimiter=' '):
-                id2class_name[int(i) - 1] = nm
-            for i in range(len(id2class_name)):
-                class_names.append(id2class_name[i])
-
         if self.is_train:
-            with open(os.path.join(self.datadir, 'trainlist01.txt')) as fin:
-                for nm, c in csv.reader(fin, delimiter=' '):
-                    self.clip_lst.append((os.path.join(self.datadir, nm), int(c) - 1))
+            label_file = os.path.join(self.datadir, 'DatasetLabels','short_video_trainingset_annotations.txt.082902')
+            folder_name = 'train_collection'
         else:
-            with open(os.path.join(self.datadir, 'testlist01.txt')) as fin:
-                for nm, in csv.reader(fin, delimiter=' '):
-                    c = nm[:nm.find('/')]
-                    self.clip_lst.append((os.path.join(self.datadir, nm), class_names.index(c)))
-        # loging
+            label_file = os.path.join(self.datadir, 'DatasetLabels', 'short_video_validationset_annotations.txt.0829')
+            folder_name = 'val_collection'
+
+        with open(label_file,'r') as fin:
+            for line in fin.readlines():
+                vid_info = line.split(',')
+                file_name = os.path.join(self.datadir,'videos',folder_name,vid_info[0])
+                labels = [int(id) for id in vid_info[1:]]
+                self.max_label = max(self.max_label,max(labels))
+                self.clip_lst.append((file_name,labels))
         logger.info("load data from %s,num_clip_List %d"%(self.datadir,len(self.clip_lst)))
 
     def __len__(self):
@@ -59,7 +60,7 @@ class UCF101(Dataset):
 
     def __getitem__(self, index):
         """the index is the video index in clip_list,read several frame from the index"""
-        filename,label = self.clip_lst[index]
+        filename,labels = self.clip_lst[index]
         if not os.path.exists(filename):
             print("the file not exist",filename)
             return None
@@ -119,7 +120,11 @@ class UCF101(Dataset):
             extra_data = nd.tile(nd_image_list[-1],reps=(self.n_frame-current_length,1,1,1))
             extra_data = extra_data.transpose((1,0,2,3))
             cthw_data = nd.concat(cthw_data,extra_data,dim=1)
-        return cthw_data,label
+        # begin to construct the label
+        label_nd = np.zeros(shape=(self.max_label), dtype=np.float32)
+        for tag_index in labels:
+            label_nd[tag_index-1] = 1
+        return cthw_data,label_nd
 
 train_transform = T.Compose([
     T.ToTensor(),
@@ -127,7 +132,7 @@ train_transform = T.Compose([
                 std=[0.229, 0.224, 0.225])
 ])
 
-def get_ucf101trainval(datadir,
+def get_simple_meitu_dataloader(datadir,
                        batch_size=4,
                        n_frame=32,
                        crop_size=112,
@@ -135,31 +140,33 @@ def get_ucf101trainval(datadir,
                        scale_w=171,
                        num_workers=6):
     """construct the dataset and then set the datasetloader"""
-    train_dataset = UCF101(datadir,n_frame,crop_size,scale_w,scale_h,train=True,transform=train_transform)
-    val_dataset = UCF101(datadir,n_frame,crop_size,scale_w,scale_h,train = False,transform=train_transform)
+    train_dataset = SimpleMeitu(datadir,n_frame,crop_size,scale_w,scale_h,train=True,transform=train_transform)
+    val_dataset = SimpleMeitu(datadir,n_frame,crop_size,scale_w,scale_h,train = False,transform=train_transform)
     if __name__=='__main__':
         # test get data with single video
         data0 = train_dataset[0]
-        print(data0)
+        print("train data nframe shape",data0[0].shape,"train data labels ",data0[1])
         val_data = val_dataset[12]
-        print(val_data)
+        print("val data nframe shape",val_data[0].shape,"val data labels",val_data[1])
+
     train_dataloader = DataLoader(train_dataset,batch_size=batch_size,shuffle=True,num_workers=6)
     val_dataloader = DataLoader(val_dataset,batch_size=batch_size,shuffle=False,num_workers=6)
     return train_dataloader,val_dataloader
 
 if __name__=='__main__':
 
-    # train_loader,val_loader = get_ucf101trainval()
-    # for i,data in train_loader:
-    #     print(type(data))
-    #     ipdb.set_trace()
-    #     break
-    train_data = UCF101(datadir='/data/jh/notebooks/hudengjun/DeepVideo/UCF-101',n_frame=32,
+    train_data = SimpleMeitu(datadir='/data/jh/notebooks/hudengjun/meitu',n_frame=32,
                        crop_size=112,
                        scale_h=128,
                        scale_w=171,
                        train=True,
                         transform=train_transform)
     data = train_data[0]
-    print(data)
+
+
+    train_loader,val_loader = get_simple_meitu_dataloader(datadir='/data/jh/notebooks/hudengjun/meitu',n_frame=32,crop_size=112,
+                                                          scale_h=128,scale_w=171,num_workers=6)
+    for i,(data,label) in enumerate(train_loader):
+        print(data.shape)
+        print(label.shape)
 

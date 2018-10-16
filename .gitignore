@@ -7,5 +7,10 @@
 *.pkl
 output/*.*
 .gitignore
+meitu/
+meitubce_log/
+data/.ipynb_checkpoints/
+data/*.ipynb
+*.params
 
 

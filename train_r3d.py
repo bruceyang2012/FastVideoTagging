@@ -3,8 +3,10 @@ import argparse
 import os
 import sys
 import mxnet as mx
-from model import get_R2plus1d,R2Plus2D
+from model import R2Plus2D
 from data import get_ucf101trainval
+from data import get_meitu_dataloader
+from data import get_simple_meitu_dataloader
 import numpy as np
 import mxnet.gluon.loss as gloss
 import mxnet.gluon.nn as nn
@@ -16,38 +18,64 @@ from time import time
 import pickle
 from mxnet import nd
 import ipdb
-
+from model import LsepLoss
 
 def train_eval(opt):
     mx.random.seed(123)
     np.random.seed(123)
+    os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3'
     gpus = [] if opt.gpus is None or opt.gpus is '' else [
         int(gpu) for gpu in opt.gpus.split(',')]
     num_gpus = len(gpus)
     batch_size = opt.batch_per_device*max(1,num_gpus)
     context = [mx.gpu(i) for i in gpus] if num_gpus>0 else [mx.cpu()]
     steps = [int(step) for step in opt.lr_scheduler_steps.split(',')]
-    #net = get_R2plus1d(num_class=opt.num_class,model_depth=opt.model_depth)
-    net = R2Plus2D(num_class=opt.num_class,model_depth=opt.model_depth)
+
+    #optional ucf101 or meitu,get net structure,loss criterion,train val loader
+    if opt.dataset=='ucf101' or opt.dataset=='ucf':
+        net = R2Plus2D(num_class=101,model_depth=opt.model_depth)
+        loss_criterion = gloss.SoftmaxCrossEntropyLoss() # loss function
+        train_loader, val_loader = get_ucf101trainval(datadir='/data/jh/notebooks/hudengjun/DeepVideo/UCF-101',
+                                                      batch_size=batch_size,
+                                                      n_frame=opt.n_frame,
+                                                      crop_size=opt.crop_size,
+                                                      scale_h=opt.scale_h,
+                                                      scale_w=opt.scale_w,
+                                                      num_workers=opt.num_workers)  # the train and evaluation data loader
+    elif opt.dataset =='meitu':
+        net = R2Plus2D(num_class=62,model_depth=opt.model_depth) # labels set 62
+        #loss_criterion = gloss.SigmoidBinaryCrossEntropyLoss()
+        loss_criterion = LsepLoss()
+        loss_criterion = gloss.SigmoidBinaryCrossEntropyLoss()
+        # train_loader,val_loader = get_meitu_dataloader(data_dir=opt.meitu_dir,
+        #                                                device_ids=gpus,
+        #                                                n_frame=opt.n_frame,
+        #                                                crop_size=opt.crop_size,
+        #                                                scale_h=opt.scale_h,
+        #                                                scale_w=opt.scale_w,
+        #                                                num_workers=opt.num_workers) # use multi gpus to load data
+        train_loader,val_loader = get_simple_meitu_dataloader(datadir=opt.meitu_dir,
+                                                              batch_size=batch_size,
+                                                              n_frame=opt.n_frame,
+                                                              crop_size=opt.crop_size,
+                                                              scale_h=opt.scale_h,
+                                                              scale_w=opt.scale_w,
+                                                              num_workers=opt.num_workers)
+
+
     net.initialize(mx.init.Xavier(),
                    ctx=context)  # net parameter initialize in several cards
     if not opt.pretrained is None:
         if opt.pretrained.endswith('.pkl'):
             net.load_from_caffe2_pickle(opt.pretrained)
         elif opt.pretrained.endswith('.params'):
-            net.load_from_sym_params(opt.pretrained,ctx = context)
-            #load params to net context
+            try:
+                net.load_from_sym_params(opt.pretrained,ctx = context)
+            except Exception as e:
+                print("load as sym params failed,reload as gluon params")
+                net.load_params(opt.pretrained,ctx=context)
+                #load params to net context
 
-
-
-    loss_criterion = gloss.SoftmaxCrossEntropyLoss() # loss function
-    train_loader,val_loader = get_ucf101trainval(datadir=opt.datadir,
-                                                 batch_size=batch_size,
-                                                 n_frame=opt.n_frame,
-                                                 crop_size=opt.crop_size,
-                                                 scale_h=opt.scale_h,
-                                                 scale_w=opt.scale_w,
-                                                 num_workers=opt.num_workers) # the train and evaluation data loader
     trainer = gluon.Trainer(net.collect_params(),'sgd',
                             {'learning_rate':opt.lr,'momentum':0.9,'wd':opt.wd},
                             kvstore=opt.kvstore) # the trainer
@@ -109,7 +137,8 @@ def train_eval(opt):
         val_acc = acc.asscalar()/test_iter
         logging.info("[Epoch %d],val acc:%f"%(epoch,val_acc))
         if val_acc>best_eval:
-            net.save_parameters('./output/test-val%04d.params'%(epoch))
+            net.save_parameters('./output/%s_test-val%04d.params'%(opt.dataset,epoch))
+            best_eval = val_acc
     logging.info("----------------finish training-----------------")
 
 
@@ -118,7 +147,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='command for training plus 3d network')
     parser.add_argument('--gpus',type=str,default='0',help='the gpus used for training')
     parser.add_argument('--pretrained',type=str,default='',help='pretrained model parameter')
-    parser.add_argument('--datadir',type=str,default='/data/jh/notebooks/hudengjun/DeepVideo/UCF-101',help='the input data directory')
+    parser.add_argument('--dataset',type=str,default='meitu',help='the input data directory')
     parser.add_argument('--output', type=str, default='./output/', help='the output directory')
     parser.add_argument('--optimizer',type=str,default='sgd',help='optimizer')
 
@@ -129,7 +158,7 @@ if __name__=='__main__':
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum for sgd')
     parser.add_argument('--bn_mom', type=float, default=0.9, help='momentum for bn')
     parser.add_argument('--batch_per_device', type=int, default=4, help='the batch size')
-    parser.add_argument('--batch_size', type=int, default=16, help='the batch size')
+    parser.add_argument('--batch_size', type=int, default=4, help='the batch size')
     parser.add_argument('--num_class', type=int, default=101, help='the number of class')
     parser.add_argument('--model_depth', type=int, default=34, help='network depth')
     parser.add_argument('--num_epoch', type=int, default=80, help='the number of epoch')
@@ -143,6 +172,7 @@ if __name__=='__main__':
     parser.add_argument('--kvstore',type=str,default='device',help='kvstore to use for trainer')
     parser.add_argument('--log_interval',type=int,default=20,help='number of the batches to wait before logging')
     parser.add_argument('--debug',action='store_true',default=False)
+    parser.add_argument('--meitu_dir',type=str,default='/data/jh/notebooks/hudengjun/meitu',help='the meitu dataset directory')
 
     #parse arguments and mkdir
     args = parser.parse_args()
@@ -159,3 +189,6 @@ if __name__=='__main__':
     logging.getLogger('').addHandler(console)
     logging.info(args)
     train_eval(args)
+    """
+    useage:
+    python train_r3d --gpus 0,1"""
