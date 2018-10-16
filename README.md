@@ -1,4 +1,13 @@
-# R2Plus1D-mxnet
+# FastVideoTagging 
+## About this project
+Fast video tagging is a project to tagging a short video (about 15-30 second time length) in less than 150 ms.
+this is a application in short video understanding, for video multilabel-classification and video retrieval.
+there are three main body net for fast video tagging Namely :   
+- R2Puls1D
+- MFNet  
+- CNN-RNN Unified Model  
+each of above method is based on several video classification paper 
+- [R2+1D]()
 
 R2Plus1D MXNet Implementation
 
