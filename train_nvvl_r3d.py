@@ -6,7 +6,7 @@ import mxnet as mx
 from model import R2Plus2D
 from data import get_ucf101trainval
 use_nvvl=False
-#from data import get_meitu_dataloader
+from data.nvvl_meitu import get_meitu_dataloader
 from data import get_simple_meitu_dataloader
 import numpy as np
 import mxnet.gluon.loss as gloss
@@ -20,6 +20,7 @@ import pickle
 from mxnet import nd
 import time as tmm
 import ipdb
+from util import Visulizer
 from model import LsepLoss,LSEP_funcLoss,WarpLoss,WARP_funcLoss
 
 def train_eval(opt):
@@ -45,24 +46,15 @@ def train_eval(opt):
                                                       scale_w=opt.scale_w,
                                                       num_workers=opt.num_workers)  # the train and evaluation data loader
     elif opt.dataset =='meitu':
-        net = R2Plus2D(num_class=62,model_depth=opt.model_depth) # labels set 62
+        net = R2Plus2D(num_class=63,model_depth=opt.model_depth) # labels set 63
 
-        # loss_criterion = LsepLoss()
-        # loss_criterion = gloss.SigmoidBinaryCrossEntropyLoss()
-        # train_loader,val_loader = get_meitu_dataloader(data_dir=opt.meitu_dir,
-        #                                                device_ids=gpus,
-        #                                                n_frame=opt.n_frame,
-        #                                                crop_size=opt.crop_size,
-        #                                                scale_h=opt.scale_h,
-        #                                                scale_w=opt.scale_w,
-        #                                                num_workers=opt.num_workers) # use multi gpus to load data
-        train_loader,val_loader = get_simple_meitu_dataloader(datadir=opt.meitu_dir,
-                                                              batch_size=batch_size,
-                                                              n_frame=opt.n_frame,
-                                                              crop_size=opt.crop_size,
-                                                              scale_h=opt.scale_h,
-                                                              scale_w=opt.scale_w,
-                                                              num_workers=opt.num_workers)
+        train_loader,val_loader = get_meitu_dataloader(data_dir=opt.meitu_dir,
+                                                       device_ids=gpus,
+                                                       n_frame=opt.n_frame,
+                                                       crop_size=opt.crop_size,
+                                                       scale_h=opt.scale_h,
+                                                       scale_w=opt.scale_w,
+                                                       num_workers=opt.num_workers) # use multi gpus to load data
     loss_dict = {'bce':gloss.SigmoidBinaryCrossEntropyLoss,
                  'warp_nn':WarpLoss,
                  'warp_fn':WARP_funcLoss,
@@ -70,6 +62,9 @@ def train_eval(opt):
                  'lsep_fn':LSEP_funcLoss}
     loss_criterion = loss_dict[opt.loss_type]()
 
+    vis_env = opt.dataset + opt.loss_type
+    vis = Visulizer(env=vis_env)
+    vis.log(opt)
 
     net.initialize(mx.init.Xavier(),
                    ctx=context)  # net parameter initialize in several cards
@@ -97,7 +92,8 @@ def train_eval(opt):
         tic = time()
         pre_loss,cumulative_loss = 0.0,0.0
         trainer.set_learning_rate(lr_steps(epoch))
-        logging.info('Epoch %d learning rate %f'%(epoch,trainer.learning_rate))
+        vis.log('Epoch %d learning rate %f'%(epoch,trainer.learning_rate))
+
         for i,(data,label) in enumerate(train_loader):
             try:
                 data_list = gluon.utils.split_and_load(data,ctx_list=context,batch_axis=0)
@@ -119,11 +115,12 @@ def train_eval(opt):
                 logging.info('[Epoch %d,Iter %d ] training loss= %f'%(
                     epoch,i+1,cumulative_loss-pre_loss
                 ))
+                vis.plot('loss',cumulative_loss-pre_loss)
                 pre_loss =cumulative_loss
                 if opt.debug:
                     break
-        logging.info('[Epoch %d] training loss=%f'%(epoch,cumulative_loss))
-        logging.info('[Epoch %d] time used: %f'%(epoch,time()-tic))
+        vis.log('[Epoch %d] training loss=%f'%(epoch,cumulative_loss))
+        vis.log('[Epoch %d] time used: %f'%(epoch,time()-tic))
 
 
         best_iou=0.0
@@ -148,9 +145,10 @@ def train_eval(opt):
                 val_acc = acc.asscalar() / test_iter
                 if (i+1) %(opt.log_interval)==0:
                     logging.info("[Epoch %d,Iter %d],acc=%f" % (epoch,i,val_acc))
+            vis.plot('acc',val_acc)
         elif opt.dataset=='meitu':
             k=4
-            topk_inter = np.array([1e-4]*k)
+            topk_inter = np.array([1e-4]*k) # a epsilon for divide not by zero
             topk_union = np.array([1e-4]*k)
 
             for i,(data,label) in enumerate(val_loader):
@@ -180,6 +178,9 @@ def train_eval(opt):
                     if opt.debug:
                         if i==2:
                             break
+                for i in range(k):
+                    vis.plot('val_iou_{0}'.format(i+1),topk_inter[i]/topk_union[i])
+
             net.save_parameters('./output/%s_test-val%04d.params'%(opt.dataset+opt.loss_type,epoch))
     logging.info("----------------finish training-----------------")
 
@@ -234,5 +235,5 @@ if __name__=='__main__':
     train_eval(args)
     """
     useage:
-    python train_r3d --gpus 0,1 --pretrained ./output/test-0017.params --loss_type warp_nn --output ./hpc4
+    python train_r3d --gpus 0,1 --pretrained ./kinectics-pretrained.params --loss_type lsep_nn --output r3d_lsep
     """

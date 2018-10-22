@@ -124,7 +124,8 @@ if __name__ == '__main__':
     parser.add_argument('--scale_h', type=int, default=128, help='the rescaled height of image')
 
     args = parser.parse_args()
-
+    # use case:
+    # python train.py --gpus 0
     # Create Output Dir
     if not os.path.exists(args.output):
         os.makedirs(args.output)

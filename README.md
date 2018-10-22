@@ -74,5 +74,9 @@ $ python train_r3d.py --gpus 1,2 --pretrained model.params
 ### origin data  
 - origin train log  in /data/jh/notebooks/hudengjun/VideosFamous/R2Plus1D-MXNet
 
-
+### Entry Point file
+- train.py this is an implementaion for ucf101 sym writtened by Original
+- train_r3d.py this is an simple-meitu and simple ucf101 dataloader train
+- train_nvvl.py this is an nvvl-meitu dataloader train model
+- train_unified.py this is an cnn-rnn framework train model.not implemented.
 

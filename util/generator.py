@@ -1,4 +1,4 @@
-
+# A generator use case
 
 class Gener(object):
     def __init__(self,num):
