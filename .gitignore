@@ -8,9 +8,11 @@
 output/*.*
 .gitignore
 meitu/
+hpc4/
 meitubce_log/
 data/.ipynb_checkpoints/
 data/*.ipynb
 *.params
+*.ipynb
 
 

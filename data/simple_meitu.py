@@ -72,7 +72,7 @@ class SimpleMeitu(Dataset):
             height= v.get(cv2.CAP_PROP_FRAME_HEIGHT)
             length = v.get(cv2.CAP_PROP_FRAME_COUNT)
 
-            assert self.crop_size<=width and self.crop_size<= height,'%d'
+            #assert self.crop_size<=width and self.crop_size<= height
             length = int(length)
             if length<self.n_frame:
                 logger.info("%s length %d <%d"%(filename,length,self.n_frame))

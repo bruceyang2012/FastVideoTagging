@@ -5,7 +5,8 @@ import sys
 import mxnet as mx
 from model import R2Plus2D
 from data import get_ucf101trainval
-from data import get_meitu_dataloader
+use_nvvl=False
+#from data import get_meitu_dataloader
 from data import get_simple_meitu_dataloader
 import numpy as np
 import mxnet.gluon.loss as gloss
@@ -17,8 +18,9 @@ from mxnet import autograd
 from time import time
 import pickle
 from mxnet import nd
+import time as tmm
 import ipdb
-from model import LsepLoss
+from model import LsepLoss,LSEP_funcLoss,WarpLoss,WARP_funcLoss
 
 def train_eval(opt):
     mx.random.seed(123)
@@ -44,9 +46,9 @@ def train_eval(opt):
                                                       num_workers=opt.num_workers)  # the train and evaluation data loader
     elif opt.dataset =='meitu':
         net = R2Plus2D(num_class=62,model_depth=opt.model_depth) # labels set 62
-        #loss_criterion = gloss.SigmoidBinaryCrossEntropyLoss()
-        loss_criterion = LsepLoss()
-        loss_criterion = gloss.SigmoidBinaryCrossEntropyLoss()
+
+        # loss_criterion = LsepLoss()
+        # loss_criterion = gloss.SigmoidBinaryCrossEntropyLoss()
         # train_loader,val_loader = get_meitu_dataloader(data_dir=opt.meitu_dir,
         #                                                device_ids=gpus,
         #                                                n_frame=opt.n_frame,
@@ -61,6 +63,12 @@ def train_eval(opt):
                                                               scale_h=opt.scale_h,
                                                               scale_w=opt.scale_w,
                                                               num_workers=opt.num_workers)
+    loss_dict = {'bce':gloss.SigmoidBinaryCrossEntropyLoss,
+                 'warp_nn':WarpLoss,
+                 'warp_fn':WARP_funcLoss,
+                 'lsep_nn':LsepLoss,
+                 'lsep_fn':LSEP_funcLoss}
+    loss_criterion = loss_dict[opt.loss_type]()
 
 
     net.initialize(mx.init.Xavier(),
@@ -70,6 +78,7 @@ def train_eval(opt):
             net.load_from_caffe2_pickle(opt.pretrained)
         elif opt.pretrained.endswith('.params'):
             try:
+                print("load pretrained params ",opt.pretrained)
                 net.load_from_sym_params(opt.pretrained,ctx = context)
             except Exception as e:
                 print("load as sym params failed,reload as gluon params")
@@ -117,28 +126,61 @@ def train_eval(opt):
         logging.info('[Epoch %d] time used: %f'%(epoch,time()-tic))
 
 
-        acc = nd.array([0],ctx=mx.cpu())
-        test_iter = 0
-        for i,(data,label) in enumerate(val_loader):
-            try:
-                data_list = gluon.utils.split_and_load(data,ctx_list=context,batch_axis=0)
-                label_list = gluon.utils.split_and_load(label,ctx_list=context,batch_axis=0)
-            except Exception as e:
-                logging.info(e)
-                continue
-            for x,y in zip(data_list,label_list):
-                y_hat = net(x)
-                test_iter +=1
-                y_pred = y_hat.argmax(axis=1)
-                acc += (y_pred == y.astype('float32')).mean().asscalar() # acc in cpu
-            if opt.debug:
-                if i==2:
-                    break
-        val_acc = acc.asscalar()/test_iter
-        logging.info("[Epoch %d],val acc:%f"%(epoch,val_acc))
-        if val_acc>best_eval:
-            net.save_parameters('./output/%s_test-val%04d.params'%(opt.dataset,epoch))
-            best_eval = val_acc
+        best_iou=0.0
+        if opt.dataset=='ucf101' or opt.dataset =='ucf':
+            acc = nd.array([0],ctx=mx.cpu())
+            test_iter = 0
+            for i,(data,label) in enumerate(val_loader):
+                try:
+                    data_list = gluon.utils.split_and_load(data,ctx_list=context,batch_axis=0)
+                    label_list = gluon.utils.split_and_load(label,ctx_list=context,batch_axis=0)
+                except Exception as e:
+                    logging.info(e)
+                    continue
+                for x,y in zip(data_list,label_list):
+                    y_hat = net(x)
+                    test_iter +=1 # single iter
+                    y_pred = y_hat.argmax(axis=1)
+                    acc += (y_pred == y.astype('float32')).mean().asscalar() # acc in cpu
+                if opt.debug:
+                    if i==2:
+                        break
+                val_acc = acc.asscalar() / test_iter
+                if (i+1) %(opt.log_interval)==0:
+                    logging.info("[Epoch %d,Iter %d],acc=%f" % (epoch,i,val_acc))
+        elif opt.dataset=='meitu':
+            k=4
+            topk_inter = np.array([1e-4]*k)
+            topk_union = np.array([1e-4]*k)
+
+            for i,(data,label) in enumerate(val_loader):
+                try:
+                    data_list = gluon.utils.split_and_load(data,ctx_list=context,batch_axis=0)
+                    label_list = gluon.utils.split_and_load(label,ctx_list=context,batch_axis=0)
+                except Exception as e:
+                    logging.info(e)
+                    continue
+                for x,y in zip(data_list,label_list):
+                    y_hat = net(x)
+                    pred_order = y_hat.argsort()[:,::-1] # sort and desend order
+                    #just compute top1 label
+                    pred_order_np = pred_order.asnumpy()
+                    y_np = y.asnumpy()
+                    if opt.debug:
+                        print("pred shape and target shape",pred_order_np.shape,y_np.shape)
+                    for pred_vec,y_vec in zip(pred_order_np,y_np):
+                        label_set =set([index for index,value in enumerate(y_vec) if value>0.1])
+                        pred_topk = [set(pred_vec[0:k]) for k in range(1,k+1)]
+                        topk_inter +=np.array([len(p_k.intersection(label_set)) for p_k in pred_topk])
+                        topk_union +=np.array([len(p_k.union(label_set)) for p_k in pred_topk])
+                if (i+1) %(opt.log_interval)==0:
+                    logging.info("[Epoch %d,Iter %d],time %s,Iou %s" % (epoch, i, \
+                                                                        tmm.strftime("%Y-%D:%H-%S"), \
+                                                                        str(topk_inter / topk_union)))
+                    if opt.debug:
+                        if i==2:
+                            break
+            net.save_parameters('./output/%s_test-val%04d.params'%(opt.dataset+opt.loss_type,epoch))
     logging.info("----------------finish training-----------------")
 
 
@@ -173,6 +215,7 @@ if __name__=='__main__':
     parser.add_argument('--log_interval',type=int,default=20,help='number of the batches to wait before logging')
     parser.add_argument('--debug',action='store_true',default=False)
     parser.add_argument('--meitu_dir',type=str,default='/data/jh/notebooks/hudengjun/meitu',help='the meitu dataset directory')
+    parser.add_argument('--loss_type',type=str,default='warp_fn',help='the loss type for current train')
 
     #parse arguments and mkdir
     args = parser.parse_args()

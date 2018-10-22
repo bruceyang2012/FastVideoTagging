@@ -244,6 +244,15 @@ class R2Plus2D(nn.Block):
         #print('after avg',x.shape)
         return self.output(x)
 
+    def extract_features(self,x):
+        x = self.base(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.avg(x)
+        return x
+
     def load_from_sym_params(self,f,ctx = mx.cpu()):
         """f is a file name store by mxnet params"""
         if not os.path.exists(f):
@@ -265,6 +274,8 @@ class R2Plus2D(nn.Block):
             stored_keys = self.__getattribute__(layer_name)
             for model_k,connect_k in zip(model_layer_keys,stored_keys):
                 #print(model_k,connect_k)
+                if model_k.startswith('dense0'):
+                    continue
                 params[model_k]._load_init(trans_dict[connect_k],ctx=ctx)
 
 

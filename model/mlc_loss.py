@@ -5,13 +5,13 @@ from mxnet import nd
 from mxnet import autograd
 import numpy as np
 
-class LSEP(autograd.Function):
+class LSEP_funcLoss(autograd.Function):
     """
     this is the Log-sum-exp-Pairwise-ranking loss from paper:
     Improving Pairwise Ranking for Multi-label Image Classification .paper address in:
     http://ieeexplore.ieee.org/document/8099682/
     """
-    name='LSEP'
+    name='LSEP_funcLoss'
     def forward(self,pred,target,max_num_trials=None):
         if max_num_trials is None:
             max_num_trials = target.shape[1]-1
@@ -69,18 +69,20 @@ class LsepLoss(nn.Block):
         dist = nd.broadcast_minus(pred.reshape(batch,dim,1),pred.reshape(batch,1,dim))
         pos = mxnet.nd.greater(target,0).reshape(batch,dim,1)
         neg = mxnet.nd.equal(target,0).reshape(batch,1,dim)
+        pos.detach()
+        neg.detach()
 
         # pos_matrix = mxnet.nd.concat(*([pos]*dim),dim=2)
         # neg_matrix = mxnet.nd.concat(*([neg]*dim),dim=1)
         #print(pos_matrix.shape,neg_matrix.shape,dist.shape)
         #loss_matrix = nd.log(1+nd.sum(pos_matrix*neg_matrix*nd.exp(-dist)))
-        print("----------------------")
-        print("pos is ",pos)
-        print("neg is ",neg)
-        print("multiply is ",nd.broadcast_mul(pos,neg))
-        print("the distance is ",dist)
-        print("the mat mul is ",nd.broadcast_mul(pos,neg)*dist)
-        print("-----------------------")
+        # print("----------------------")
+        # print("pos is ",pos)
+        # print("neg is ",neg)
+        # print("multiply is ",nd.broadcast_mul(pos,neg))
+        # print("the distance is ",dist)
+        # print("the mat mul is ",nd.broadcast_mul(pos,neg)*dist)
+        # print("-----------------------")
         loss_matrix = nd.log(1 + nd.sum(nd.broadcast_mul(pos,neg)* nd.exp(-dist)))
         return loss_matrix
 
@@ -89,20 +91,20 @@ class WarpLoss(nn.Block):
     the WARP loss proposed in Wasbie and Yangqing Jia's paper
     """
 
-    def __init__(self,label_size):
+    def __init__(self,label_size=62):
         super(WarpLoss,self).__init__()
         self.rank_weights = [1.0/1]
         for i in range(1,label_size):
             self.rank_weights.append(self.rank_weights[i-1]+1.0/(i+1))
         self.max_num_trails = label_size-1 # c-1
 
-    def forward(self, pred,input):
+    def forward(self, pred,target):
         batch,dim = pred.shape
-        pos = mxnet.nd.greater(target,0).reshape(batch,dim,1)
-        neg = mxnet.nd.equal(target,0).reshape(batch,1,dim)
+        # pos = mxnet.nd.greater(target,0).reshape(batch,dim,1)
+        # neg = mxnet.nd.equal(target,0).reshape(batch,1,dim)
 
         #construct the weight Li_j
-        L = mxnet.nd.zeros(shape=(batch,dim))
+        L = mxnet.nd.zeros(shape=(batch,dim),ctx=pred.context)
         for i in range(batch):
             for j in range(dim):
                 if target[i,j]==1:
@@ -123,6 +125,7 @@ class WarpLoss(nn.Block):
                     #print(L.shape,L[i,j],self.rank_weights[r_j])
                     L[i,j] = self.rank_weights[r_j]
         #finish approximate weight
+        L.detach()
 
         dist = pred.reshape(batch, dim, 1) - pred.reshape(batch, 1, dim)
         pos = mxnet.nd.greater(target, 0).reshape(batch, dim, 1)
@@ -131,7 +134,7 @@ class WarpLoss(nn.Block):
         # pos_matrix = mxnet.nd.concat(*([pos] * dim), dim=2)
         # neg_matrix = mxnet.nd.concat(*([neg] * dim), dim=1)
         # print(L.shape,pos_matrix.shape,neg_matrix.shape,dist.shape)
-        print("L",L)
+        #print("L",L)
         # loss_matrix = L*nd.sum(nd.relu(1-pos_matrix*neg_matrix*dist),axis=1)
         # print(loss_matrix.shape)
         #print("weight L shape",L.shape)# namely (batch,dim)
@@ -152,8 +155,8 @@ class WarpLoss(nn.Block):
 
 class WARP_funcLoss(autograd.Function):
     """Autograd function of WARP loss,approximate weighted rank pairwise loss"""
-    name='WARP_funcLoss' # the warp loss
-    def __init__(self,label_size):
+    name='WARP_funcLoss'
+    def __init__(self,label_size=62):
         super(WARP_funcLoss, self).__init__()
         self.rank_weights=[1.0/1]
         for i in range(1,label_size):
@@ -189,20 +192,24 @@ class WARP_funcLoss(autograd.Function):
                     ## how many trials determin the weight
                     r_j = int(np.floor(max_num_trials / num_trials))
                     L[i,j] = rank_weights[r_j]
-        print("L weight",L)
-        loss = nd.sum(L*(nd.sum(1 - pos_mask*pred + neg_mask*pred,axis=1,keepdims=True)),axis=1)
+        #print("L weight",L)
+        loss = nd.sum(L*(nd.sum(1 - nd.array(pos_mask).as_in_context(pred.context)*pred + nd.array(neg_mask).as_in_context(pred.context)*pred,
+                                axis=1,keepdims=True)))
         self.save_for_backward(L,pos_mask,neg_mask)
         return loss
 
     def backward(self, grad_output):
         L,pos_mask,neg_mask = self.saved_tensors
-        pos_mask = pos_mask.detach()
-        neg_mask = neg_mask.detach()
+        pos_mask = pos_mask # in cpu memory
+        neg_mask = neg_mask # type numpy ndarray
+
+        pos_mask = nd.array(pos_mask,ctx=L.context)
+        neg_mask = nd.array(neg_mask,ctx=L.context)
 
         pos_grad = nd.sum(L,axis=1,keepdims=True)*(-pos_mask)
         neg_grad = nd.sum(L,axis=1,keepdims=True)*neg_mask
         grad_input = grad_output*(pos_grad+neg_grad)
-        return grad_input,nd.ones_like(target.shape[0],ctx=target.context)
+        return grad_input,nd.ones(L.shape[0],ctx=L.context)
 
 
 
@@ -214,39 +221,34 @@ class WARP_funcLoss(autograd.Function):
 
 
 if __name__=='__main__':
-    # lsep_loss = LsepLoss()
-    # use_identity =True
-    # pred = nd.random.normal(shape=(10,63))
-    # target = nd.greater(nd.random.normal(shape=(10,63)),0.1)
-    # if use_identity:
-    #     pred= nd.array([[0.9, 0.4 ,0.5 ,0.2],[0.1 ,0.6, 0.2 ,0.8]])
-    #     target = nd.array([[1,1,0,0],[0,1,0,1]])
-    # pred.attach_grad()
-    #
-    # with autograd.record():
-    #     loss = lsep_loss(pred,target)
-    #     print(loss)
-    #     loss.backward()
-    # print(loss)
-    # print(pred.grad.shape)
-    # print(pred,target)
-    # print("pred grad",pred.grad)
-    #
-    #
-    # print("--------------- the warp loss")
-    #
-    # if use_identity:
-    #     pred = nd.array([[0.9, 0.4, 0.5, 0.2], [0.1, 0.6, 0.2, 0.8]])
-    #     target = nd.array([[1, 1, 0, 0], [0, 1, 0, 1]])
-    # pred.attach_grad()
-    # warp_loss = WarpLoss(label_size=4)
-    # with autograd.record():
-    #     loss = warp_loss(pred,target)
-    #     print("warp loss",loss)
-    #     loss.backward()
-    #     print(pred.grad.shape)
-    #     print(pred, target)
-    #     print(pred.grad)
+    lsep_loss = LsepLoss()
+    use_identity =True
+    if use_identity:
+        pred= nd.array([[0.9, 0.4 ,0.5 ,0.2],[0.1 ,0.6, 0.2 ,0.8]])
+        target = nd.array([[1,1,0,0],[0,1,0,1]])
+    pred.attach_grad()
+
+    with autograd.record():
+        loss = lsep_loss(pred,target)
+        loss.backward()
+
+    print("lsep loss by block------------------",loss)
+    print("pred grad",pred.grad)
+
+
+
+
+    # test for Lsep loss function implementaion
+    Lsep_func = LSEP_funcLoss()
+    if use_identity:
+        pred = nd.array([[0.9, 0.4, 0.5, 0.2], [0.1, 0.6, 0.2, 0.8]])
+        target = nd.array([[1, 1, 0, 0], [0, 1, 0, 1]])
+    pred.attach_grad()
+    with autograd.record():
+        loss = Lsep_func(pred,target)
+        loss.backward(mxnet.nd.ones_like(loss))
+    print("lsep loss with function ",loss)
+    print(pred.grad)
 
 
     warp_loss = WarpLoss(label_size=63)
@@ -257,26 +259,28 @@ if __name__=='__main__':
     if use_identity:
         pred = nd.array([[0.9, 0.4, 0.5, 0.2], [0.1, 0.6, 0.2, 0.8]])
         target = nd.array([[1, 1, 0, 0], [0, 1, 0, 1]])
-    #print("target",target)
     pred.attach_grad()
     with autograd.record():
         loss = warp_loss(pred,target)
-        print(loss)
+
         loss.backward()
-        print("pred.grad",pred.grad)
+    print("warp loss with nn block ",loss)
+    print("pred.grad",pred.grad)
 
 
-    # test for Lsep loss function implementaion
-    Lsep_funcLoss = LSEP()
+
+
+    # test for autograd function edition of WARPLoss
+    warp_funcloss = WARP_funcLoss(label_size=4)
     if use_identity:
         pred = nd.array([[0.9, 0.4, 0.5, 0.2], [0.1, 0.6, 0.2, 0.8]])
         target = nd.array([[1, 1, 0, 0], [0, 1, 0, 1]])
     pred.attach_grad()
     with autograd.record():
-        loss = Lsep_funcLoss(pred,target)
-        loss.backward(mxnet.nd.ones_like(loss))
-        print("loss value",loss.as_scalar())
-    print(pred.grad)
+        loss = warp_loss(pred,target)
 
-    # test for autograd function edition of WARPLoss
+        loss.backward()
+    print("warp function loss value", loss)
+    print("warp function loss pred,grad",pred.grad)
+
 
