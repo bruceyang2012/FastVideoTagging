@@ -17,7 +17,7 @@ class ModelBuilder():
 
 
 def get_spatial_temporal_conv(in_filters,out_filter,stride,use_bias=False):
-    blk = nn.Sequential()
+    blk = nn.HybridSequential()
 
     i = 3*in_filters*out_filter*3*3
     i /= in_filters*3*3 + 3*out_filter
@@ -39,7 +39,7 @@ def get_spatial_temporal_conv(in_filters,out_filter,stride,use_bias=False):
     )
     return blk
 
-class R3DBlock(nn.Block):
+class R3DBlock(nn.HybridBlock):
     def __init__(self,
                  input_filter,
                  num_filter,
@@ -70,7 +70,7 @@ class R3DBlock(nn.Block):
                                          use_bias=use_bias)
             self.branch_bn = nn.BatchNorm()
 
-    def forward(self, x):
+    def hybrid_forward(self,F, x):
         y = self.spatial_temporal_conv1(x)
         y = self.relu1(self.bn1(y))
         y = self.spatial_temporal_conv2(y)
@@ -78,7 +78,7 @@ class R3DBlock(nn.Block):
         if self.num_filter != self.input_filter or self.downsampling:
             x = self.branch_conv(x)
             x = self.branch_bn(x)
-        out =nd.relu(y+x)
+        out =F.relu(y+x)
         return out
 
 BLOCK_CONFIG = {
@@ -90,11 +90,11 @@ BLOCK_CONFIG = {
 }
 
 
-class R2Plus2D(nn.Block):
-    def __init__(self,num_class,model_depth,final_spatial_kernel=7,final_temporal_kernel=2,with_bias=False):
+class R2Plus2D(nn.HybridBlock):
+    def __init__(self,num_class,model_depth,final_spatial_kernel=7,final_temporal_kernel=4,with_bias=False):
         super(R2Plus2D,self).__init__()
         self.comp_count=0
-        self.base = nn.Sequential(prefix='base_')
+        self.base = nn.HybridSequential(prefix='base_')
         with self.base.name_scope():
             self.base.add(
                 nn.Conv3D(channels=45,
@@ -118,7 +118,7 @@ class R2Plus2D(nn.Block):
 
 
         self.conv2_name =[]
-        self.conv2 = nn.Sequential(prefix='conv2_')
+        self.conv2 = nn.HybridSequential(prefix='conv2_')
         with self.conv2.name_scope():
             for _ in range(n2):
                 self.conv2_name.extend(self.add_comp_count_index(change_channels=False,comp_index=self.comp_count,prefix=self.conv2.prefix))
@@ -127,7 +127,7 @@ class R2Plus2D(nn.Block):
 
         #self.conv3
         self.conv3_name = []
-        self.conv3 = nn.Sequential(prefix='conv3_')
+        self.conv3 = nn.HybridSequential(prefix='conv3_')
         with self.conv3.name_scope():
             print("this in conv3 comp_count is ",self.comp_count)
             self.conv3_name.extend(self.add_comp_count_index(change_channels=True,downsampling=True,comp_index=self.comp_count))
@@ -141,7 +141,7 @@ class R2Plus2D(nn.Block):
 
         # self.conv4
         self.conv4_name=[]
-        self.conv4 = nn.Sequential(prefix='conv4_')
+        self.conv4 = nn.HybridSequential(prefix='conv4_')
         with self.conv4.name_scope():
             self.conv4_name.extend(self.add_comp_count_index(change_channels=True,downsampling=True, comp_index=self.comp_count))
             self.conv4.add(R3DBlock(128, 256, comp_index=self.comp_count, downsampling=True,use_bias=with_bias))
@@ -154,7 +154,7 @@ class R2Plus2D(nn.Block):
 
         #conv5
         self.conv5_name  = []
-        self.conv5 = nn.Sequential(prefix='conv5_')
+        self.conv5 = nn.HybridSequential(prefix='conv5_')
         with self.conv5.name_scope():
             self.conv5_name.extend(self.add_comp_count_index(change_channels=True,downsampling=True, comp_index=self.comp_count))
             self.conv5.add(R3DBlock(256, 512, comp_index=self.comp_count, downsampling=True,use_bias=with_bias))
@@ -168,7 +168,7 @@ class R2Plus2D(nn.Block):
         self.avg = nn.AvgPool3D(pool_size=(final_temporal_kernel, final_spatial_kernel, final_spatial_kernel),
                              strides=(1, 1, 1),
                              padding=(0, 0, 0))
-        self.output = nn.Dense(units=num_class)#,activation='sigmoid',use_bias=True)
+        self.output = nn.Dense(units=num_class,activation='sigmoid',use_bias=True)
         self.dense0_name = ['final_fc_weight','final_fc_bias']
 
     @staticmethod
@@ -229,7 +229,7 @@ class R2Plus2D(nn.Block):
 
 
 
-    def forward(self, x):
+    def hybrid_forward(self, F,x):
         x = self.base(x)
         #print('after base',x.shape)
         x = self.conv2(x)
@@ -343,17 +343,13 @@ def get_R2plus1d(num_class=101,
     net.add(nn.AvgPool3D(pool_size=(final_temporal_kernel,final_spatial_kernel,final_spatial_kernel),
                          strides=(1,1,1),
                          padding=(0,0,0)))
-    net.add(nn.Dense(units=num_class,activation='sigmoid',use_bias=True))
+    net.add(nn.Dense(units=num_class))#,activation='sigmoid',use_bias=True))
     return net
 
 
 if __name__=='__main__':
+    print("begin to test quick use time")
     from mxnet import init
-    print("being to test time")
-    import argparse
-    args = argparse.ArgumentParser()
-    args.add_argument('--gpus',type=int,default=-1,help='the gpus device')
-    ags = args.parse_args()
     # net = get_R2plus1d(101,model_depth=34)
     # net.initialize()
     # print(net)
@@ -361,23 +357,26 @@ if __name__=='__main__':
     # for layer in net:
     #     x = layer(x)
     #     print(layer.name,'output shape',x.shape)
+
+    net2 = R2Plus2D(num_class=101,model_depth=34)
+
+
     import os
 
-    context = mx.gpu(ags.gpus) if ags.gpus>0 else mx.cpu()
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
-    size = 112
-    t_length = 16
-    net2 = R2Plus2D(num_class=63,model_depth=34,final_temporal_kernel=t_length//8,final_spatial_kernel=size//16)
+    context = mx.gpu(2)#context = mx.cpu()
     net2.initialize(init=init.Xavier(),ctx=context)
-    x = nd.random.uniform(shape=(1, 3, t_length, size, size))
+    net2.hybridize()
+    x = nd.random.uniform(shape=(1, 3, 8, 112, 112))
     #net2.collect_params().reset_ctx(mx.gpu(1))
     x = x.as_in_context(context)
-    print("beigin to finetune time")
+
+    print("beging to fintune time")
     for i in range(10):
         y = net2(x)
         y.wait_to_read()
 
-    print("start to calculat time")
+    print("begin to calculate time")
     tic = time()
     for i in range(100):
         y = net2(x)
@@ -387,11 +386,13 @@ if __name__=='__main__':
     #print(dir(net2))
     # x = nd.random.uniform(shape=(2, 3, 32, 112, 112))
     # net2(x)
-    sym_dict = nd.load('../output/test-0017.params')
-    dict_keys = sym_dict.keys()
-    sym_keys = [key.split(':')[-1] for key in dict_keys]
-    print(sym_keys)
-    print('sym keys length',len(sym_keys))
+
+    # sym_dict = nd.load('../output/test-0017.params')
+    # dict_keys = sym_dict.keys()
+    # sym_keys = [key.split(':')[-1] for key in dict_keys]
+    # print(sym_keys)
+
+    # print('sym keys length',len(sym_keys))
     # #net2.load_from_sym_params('../output/test_0018.params')
     #params = net2.params
     # print(params)
@@ -414,9 +415,9 @@ if __name__=='__main__':
     #
     # print(sum_model_keys)
 
-    net2.load_from_sym_params('../output/test-0017.params')
-
-    y =net2(x)
-    params = net2.collect_params()
+    # net2.load_from_sym_params('../output/test-0017.params')
+    #
+    # y =net2(x)
+    # params = net2.collect_params()
 
     #print(y)

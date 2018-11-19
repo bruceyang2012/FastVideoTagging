@@ -4,36 +4,51 @@ from model import R2Plus2D
 import mxnet.gluon.rnn as rnn
 from mxnet import nd
 import mxnet
-
+from mxnet.gluon.model_zoo.vision import get_resnet
 class Encoder(nn.Block):
     # the video clip encoder model part
-    def __init__(self,num_class,model_depth,embed_size):
+    def __init__(self,num_class,model_depth):
         super(Encoder,self).__init__()
         self.basic_model = R2Plus2D(num_class=num_class,model_depth=model_depth)
-        self.linear = nn.Dense(units=embed_size)
-        self.bn = nn.BatchNorm(axis=1,momentum=0.1)
+
 
     def forward(self, x):
+        # x shape is NCTHW,just use the conv to avg_pool feature extract
         r2_feature = self.basic_model.extract_features(x)
-        r2_feature = r2_feature.reshape(r2_feature.shape[0],-1) # batch,-1
-        features = self.linear(r2_feature)
-        features = self.bn(features)
-        return features
+        return r2_feature
+    def custom_load_params(self,filename):
+        self.basic_model.load_parameters(filename)
 
+class State_Trans(nn.Block):
+    # input is the cnn out dim ,output is the rnn hidden dim
+    def __init__(self,input_dim,output_dim):
+        super(State_Trans,self).__init__():
+        with self.name_scope():
+            self.linear1 = nn.Dense(output_dim,in_units=input_dim,flatten=False)
+
+    def forward(self, feat):
+        return self.linear1(feat)
 
 class Decoder(nn.Block):
     # the video decoder to label set part
     def __init__(self,embed_size,hidden_size,vocab_size,num_layers,max_seq_length=20):
         super(Decoder,self).__init__()
+        self.num_layers = num_layers
+        self.vid_init_state = nn.Dense(hidden_size,flatten=False)
         self.embed = nn.Embedding(vocab_size,embed_size)
-        self.lstm = rnn.GRU(hidden_size=hidden_size,num_layers=1,dropout=0.1)
+        self.rnn = rnn.GRU(hidden_size=hidden_size,num_layers=num_layers,dropout=0.1)
 
-    def forward(self, features):
-        pass
+    def forward(self, inputs,states):
+        embeded = self.embed(inputs)
+        outputs,states = self.rnn(embeded,states)
+        return outputs,states
 
-if __name__=='__main__':
-    encoder = Encoder(num_class=62,model_depth=34,embed_size=100)
-    encoder.initialize(mxnet.init.Xavier())
-    video_clip = nd.random.normal(shape=(4,3,32,112,112))
-    feature = encoder(video_clip)
-    print("feature shape",feature.shape)
+    def begin_state(self,*args,**kwargs):
+        #useage decoder.begin_state(batch_size=4,func=nd.zeros,vid_feat = features)
+        video_feat = kwargs['vid_feat']
+        init_state = self.vid_init_state(video_feat)#
+        init_state = init_state.reshape(1,*(init_state.shape)) # LNC for layer is 1
+        kwargs.pop('vid_feat')
+        states = self.rnn.begin_state(*args,**kwargs)
+        states[0] = nd.broadcast_axis(init_state,size=self.num_layers,axis=0)
+        return states

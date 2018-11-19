@@ -90,9 +90,9 @@ BLOCK_CONFIG = {
 }
 
 
-class R2Plus2D(nn.Block):
-    def __init__(self,num_class,model_depth,final_spatial_kernel=7,final_temporal_kernel=2,with_bias=False):
-        super(R2Plus2D,self).__init__()
+class R2Plus2D_MT(nn.Block):
+    def __init__(self,num_scenes,num_actions,model_depth,final_spatial_kernel=7,final_temporal_kernel=2,with_bias=False,):
+        super(R2Plus2D_MT,self).__init__()
         self.comp_count=0
         self.base = nn.Sequential(prefix='base_')
         with self.base.name_scope():
@@ -164,11 +164,25 @@ class R2Plus2D(nn.Block):
                 self.conv5.add(R3DBlock(512, 512, self.comp_count,use_bias=with_bias))
                 self.comp_count += 1
 
-        # final output of conv5 is [512,t/8,7,7]
-        self.avg = nn.AvgPool3D(pool_size=(final_temporal_kernel, final_spatial_kernel, final_spatial_kernel),
+        # final output of conv5 is [512,t/8,7,7] #512x1x7x7
+        # for static scene tagging
+        self.scene_conv = nn.Sequential()
+        self.scene_conv.add(nn.Conv3D(256,kernel_size=(1,3,3),strides=(1,2,2)),
+                            nn.BatchNorm(),
+                            nn.Activation('relu')) # shape 256*1*2*2 # reshape(1024)
+        self.scene_drop = nn.Dropout(rate=0.3)
+        self.scene_output = nn.Dense(num_scenes)
+
+        # for action classification
+        self.action_conv = nn.Sequential()
+        self.action_conv.add(nn.Conv3D(512,kernel_size=(1,3,3),strides=(1,1,1),padding=(0,1,1)),
+                            nn.BatchNorm(),
+                            nn.Activation('relu'))
+        self.action_avg = nn.AvgPool3D(pool_size=(final_temporal_kernel, final_spatial_kernel, final_spatial_kernel),
                              strides=(1, 1, 1),
                              padding=(0, 0, 0))
-        self.output = nn.Dense(units=num_class)#,activation='sigmoid',use_bias=True)
+
+        self.action_output = nn.Dense(units=num_actions)
         self.dense0_name = ['final_fc_weight','final_fc_bias']
 
     @staticmethod
@@ -239,10 +253,18 @@ class R2Plus2D(nn.Block):
         x = self.conv4(x)
         #print('after conv4',x.shape)
         x = self.conv5(x)
-        #print('after conv5',x.shape)
-        x = self.avg(x)
-        #print('after avg',x.shape)
-        return self.output(x)
+
+        #scene branch
+        scene = self.scene_conv(x)
+        scene = scene.reshape(0,-1)
+        scene = self.scene_drop(scene)
+        scene = self.scene_output(scene)
+
+        #action_branch
+        action = self.action_conv(x)
+        action = self.action_avg(action)
+        action = self.action_output(action)
+        return scene,action # the scene confidence and action probability
 
     def extract_features(self,x):
         x = self.base(x)
@@ -271,7 +293,12 @@ class R2Plus2D(nn.Block):
             params = cld.collect_params()
             model_layer_keys = params.keys()
             layer_name = cld.name+'_name'
-            stored_keys = self.__getattribute__(layer_name)
+
+            try:
+                stored_keys = self.__getattribute__(layer_name)
+            except AttributeError as e:
+                print(e)
+                continue # does not have corespanding params
             for model_k,connect_k in zip(model_layer_keys,stored_keys):
                 #print(model_k,connect_k)
                 if model_k.startswith('dense0') and not with_dense:
@@ -366,7 +393,7 @@ if __name__=='__main__':
     context = mx.gpu(ags.gpus) if ags.gpus>0 else mx.cpu()
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
     size = 112
-    t_length = 16
+    t_length = 8
     net2 = R2Plus2D(num_class=63,model_depth=34,final_temporal_kernel=t_length//8,final_spatial_kernel=size//16)
     net2.initialize(init=init.Xavier(),ctx=context)
     x = nd.random.uniform(shape=(1, 3, t_length, size, size))

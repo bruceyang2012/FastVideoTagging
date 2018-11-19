@@ -14,5 +14,14 @@ data/.ipynb_checkpoints/
 data/*.ipynb
 *.params
 *.ipynb
+lsep_nn/
+lsep_nn2/
+meitubce_log/
+nvvl_*/
+multi*/
+lsep_*/
+decision2/
+bce*/
+*.xls
 
 

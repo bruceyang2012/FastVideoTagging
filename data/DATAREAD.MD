@@ -7,5 +7,7 @@ the following files are ucf101 dataset implementation
 
 ## Meitu-Ai Challenger
 the following file are meitu dataset implentation
-- simple_meitu.py the opencv datalod type
+- simple_meitu.py the opencv dataload type
 - nvvl_meitu.py the pynvvl decode nvvl dataload type
+- nvvl_meitu_iter.py the pynvvl mx.io.DataIter type,batch_size =1,single thread to load data and train.for purpose of test time consume.
+

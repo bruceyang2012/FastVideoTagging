@@ -3,7 +3,7 @@ import time
 import numpy as np
 class Visulizer(object):
     """the object interface to store train trace to website"""
-    def __init__(self,host="http://hpc5.yud.io",port=8088,env='street'):
+    def __init__(self,host="http://hpc3.yud.io",port=8088,env='street'):
         self.vis = visdom.Visdom(server=host,port=port,env=env)
         self.host = host
         self.port = port
@@ -40,7 +40,7 @@ class Visulizer(object):
     def log(self,info,win='log_text'):
         """self.log({loss:1,'lr':0.0001}"""
         self.log_text += ('[{time}] {info} <br>'.format(
-            time=time.strftime('%m%d_%H%M%S'), \
+            time=time.strftime('%m-%d %H:%M:%S'), \
             info=info))
         self.vis.text(self.log_text, win)
 

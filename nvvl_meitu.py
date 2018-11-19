@@ -26,17 +26,15 @@ class MeituDataset(Dataset):
                  label_file,
                  n_frame=32,
                  crop_size=112,
-                 scale_w=136,
-                 scale_h=136,
+                 scale_w=128,
+                 scale_h=171,
                  train=True,
                  device_id=0,
-                 cache_size=20,
-                 mode='dense',
                  transform=None):
         super(MeituDataset,self).__init__()
         def evicted(shape,loader):
             del loader
-            #print("loader del shape:",shape)
+            print("loader del shape:",shape)
 
         self.datadir = data_dir
         self.label_file = label_file
@@ -49,7 +47,7 @@ class MeituDataset(Dataset):
         self.clip_list = []
         self.gpu_id = device_id # type is list
         self.load_list()
-        self.nvvl_loader_dict = LRU(cache_size,callback=evicted)
+        self.nvvl_loader_dict = LRU(120,callback=evicted)
 
         self.transform = transform
         self.loader_crt_lock = multiprocessing.Lock()
@@ -72,7 +70,7 @@ class MeituDataset(Dataset):
                 self.max_label = max(self.max_label,max(labels))
                 self.clip_list.append((file_name,labels))
             self.max_label = self.max_label + 1
-        logger.info("load data from %s,num_clip_List %d,max_label %d"%(self.datadir,len(self.clip_list),self.max_label))
+        logger.info("load data from %s,num_clip_List %d"%(self.datadir,len(self.clip_list)))
 
 
 
@@ -86,7 +84,7 @@ class MeituDataset(Dataset):
         :return:
         """
         #temp_id = np.random.choice(self.gpu_ids, 1)[0]
-        if (index%2)==0:
+        if (index%3)==0:
             self.loader_crt_lock.acquire()
             try:
                 with cupy.cuda.Device(self.gpu_id):
@@ -95,32 +93,20 @@ class MeituDataset(Dataset):
                 print(e)
                 print('index is ',index)
             self.loader_crt_lock.release()
-
+        #self.loader = pynvvl.NVVLVideoLoader(device_id=temp_id, log_level='info')
+        #self.loader = np.random.choice(self.loader_list,1)[0]# pynvvl.NVVLVideoLoader(device_id=temp_id, log_level='error')
         video_file,tags = self.clip_list[index]
+        #video_file = os.path.join(self.datadir,video_file) # full path video file
         video_shape = pynvvl.video_size_from_file(video_file) #width,height
 
         self.loader_crt_lock.acquire()
         loader = self.nvvl_loader_dict.get(video_shape,None)
         if loader is None:
             loader = pynvvl.NVVLVideoLoader(device_id=self.gpu_id,log_level='error')
-            #print("create decoder id is ",self.gpu_id)
             self.nvvl_loader_dict[video_shape] = loader
         self.loader_crt_lock.release()
 
         count = loader.frame_count(video_file)
-        while count<self.n_frame:
-            index +=1
-            video_file, tags = self.clip_list[index]
-            video_shape = pynvvl.video_size_from_file(video_file)  # width,height
-
-            self.loader_crt_lock.acquire()
-            loader = self.nvvl_loader_dict.get(video_shape, None)
-            if loader is None:
-                loader = pynvvl.NVVLVideoLoader(device_id=self.gpu_id, log_level='error')
-                #print("create decoder id is ", self.gpu_id)
-                self.nvvl_loader_dict[video_shape] = loader
-            self.loader_crt_lock.release()
-            count = loader.frame_count(video_file)
 
         # start frame index
         if self.is_train:
@@ -144,14 +130,14 @@ class MeituDataset(Dataset):
 
         video = loader.read_sequence(
             video_file,
-            0,
+            frame_start,
             count=self.n_frame,
-            sample_mode='key_frame',
+            sample_mode='dense',
             horiz_flip=False,
             scale_height=self.scale_h,
             scale_width=self.scale_w,
-            crop_y=crop_y, #along with vertical direction
-            crop_x=crop_x,#along with horizontal direction
+            crop_y=crop_y,
+            crop_x=crop_x,
             crop_height=self.crop_size,
             crop_width=self.crop_size,
             scale_method='Linear',
@@ -162,13 +148,10 @@ class MeituDataset(Dataset):
         #transpose from NCHW to NHWC then to Tensor and normalized
         video = (video.transpose(0,2,3,1)/255  - cupy.array([0.485, 0.456, 0.406]))/cupy.array([0.229, 0.224, 0.225])
         video = video.transpose(3,0,1,2) # from THWC to CTHW then stack to NCTHW for 3D conv.
-        np_video = cupy.asnumpy(video)
-        del video
-        del loader
-        return nd.array(np_video),nd.array(label)
+        return nd.array(cupy.asnumpy(video)),nd.array(label)
 
 
-def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame=32,crop_size=112,scale_w=128,scale_h=171,cache_size=20):
+def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame=32,crop_size=112,scale_w=128,scale_h=171):
     train_label_file = os.path.join(data_dir,'DatasetLabels/short_video_trainingset_annotations.txt.082902')
     global same_shape
     if same_shape:
@@ -180,8 +163,7 @@ def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame
                                  scale_w=scale_w,
                                  scale_h=scale_h,
                                  train=True,
-                                 device_id=device_id,
-                                 cache_size=cache_size)
+                                 device_id=device_id)
 
     val_dataset = MeituDataset(data_dir=os.path.join(data_dir,'val_collection'),
                                label_file=os.path.join(data_dir,'DatasetLabels/short_video_validationset_annotations.txt.0829'),
@@ -190,21 +172,7 @@ def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame
                                scale_w=scale_w,
                                scale_h=scale_h,
                                train=False,
-                               device_id=device_id,
-                               cache_size=cache_size)
-    if __name__=='__main__':
-        # print the video name for decoder error
-        index = [8*3199,3219*8]
-        for i in range(12812,12816):
-            try:
-                print(i)
-                video = val_dataset[i]
-            except Exception as e:
-                print(e)
-                print("the index is ",i,"file name",val_dataset.clip_list[i])
-        print(val_dataset.clip_list[12814])
-        print('finishd')
-        exit(0)
+                               device_id=device_id)
     # if __name__=='__main__':
     #     # come to debug mode
     #     import time
@@ -214,8 +182,8 @@ def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame
     #         time.sleep(0.5)
     #     print('finish test the same shape video')
     print("the nvvl dataset loader unit test number of workers is ",num_workers)
-    train_loader = DataLoader(train_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers,last_batch='discard')
-    val_loader = DataLoader(val_dataset,batch_size=batch_size,shuffle=False,num_workers=num_workers,last_batch='discard')
+    train_loader = DataLoader(train_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers)
+    val_loader = DataLoader(val_dataset,batch_size=batch_size,shuffle=False,num_workers=num_workers)
     return train_loader,val_loader
 
 
@@ -225,19 +193,18 @@ if __name__=='__main__':
     args = parser.parse_args()
     same_shape = False
     train_loader,val_loader = get_meitu_dataloader(data_dir=args.data_dir,
-                                                    device_id=0,
+                                                    device_id=3,
                                                    batch_size=4,
-                                                   num_workers=0,
+                                                   num_workers=6,
                                                    n_frame=32,
                                                    crop_size=112,
-                                                   scale_w=128,
+                                                   scale_w=171,
                                                    scale_h=128)
     for i,(batch_data,batch_label) in enumerate(train_loader):
         print('batch_data shape',batch_data.shape)
         print('batch_label shape',batch_label.shape)
-        if i==600:
-            print("test the dataloader")
+        if i==60:
             break
 
-
+    print("test the dataloader")
 

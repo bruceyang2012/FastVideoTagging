@@ -14,6 +14,8 @@ The video tagging problems is a typical Multi-label classification problems.So w
 - WARP(Weighted approximately ranking pairwise)[Deep Convolutional Ranking for Multilabel Image Annotation](https://arxiv.org/abs/1312.4894)
 - LSEP(Log-sum-exp piarwise)[Improving Pairwise Ranking for Multi-label Image Classification](http://ieeexplore.ieee.org/document/8099682/)
 - CNN-RNN Unified[CNN-RNN: A Unified Framework for Multi-label Image Classification,Exploring CNN-RNN Architectures for Multilabel Classiﬁcation of the Amazon](http://ieeexplore.ieee.org/document/7780620/)
+- SCNN-RNN [Semantic Regularisation for Recurrent Image Annotation](http://ieeexplore.ieee.org/document/8099926/)
+- RIA [Annotation Order Matters: Recurrent Image Annotator for Arbitrary Length Image Tagging](http://arxiv.org/abs/1604.05225)
 - Binary Relevance(BCE) [Binary relevance for multi-label learning: an overview](http://link.springer.com/10.1007/s11704-017-7031-7)  
 So we use the four kinds of loss function or framework to optimize the deep model       
 

@@ -50,6 +50,14 @@ class MeituDataset(Dataset):
         self.gpu_id = device_id # type is list
         self.load_list()
         self.nvvl_loader_dict = LRU(cache_size,callback=evicted)
+        self.scene_label = list(range(0,11))+list(range(34,42))    # multi label classfication
+        self.action_label = list(range(11,34)) +list(range(42,63)) # single label classification # every one sample has a action label
+        self.scene_length = len(self.scene_label)
+        self.action_length = len(self.action_label)
+        print("scene_length is ",self.scene_length)
+        print("action length is ",self.action_length)
+        self.scene_dict =dict([(value,index) for index,value in enumerate(self.scene_label)])   # store  (real_label:train_label)
+        self.action_dict = dict([(value,index) for index,value in enumerate(self.action_label)]) # store (real_label:train_label)
 
         self.transform = transform
         self.loader_crt_lock = multiprocessing.Lock()
@@ -156,19 +164,24 @@ class MeituDataset(Dataset):
             crop_width=self.crop_size,
             scale_method='Linear',
             normalized=False)
-        label = np.zeros(shape=(self.max_label),dtype=np.float32)
+        scene_label = np.zeros(shape=(self.scene_length),dtype=np.float32) # multi_label scene
+        action_label = self.action_length-1                                # single label action classification
         for tag_index in tags:
-            label[tag_index]=1
+            if tag_index in self.scene_label:
+                scene_label[self.scene_dict[tag_index]]=1
+            else:
+                action_label = self.action_dict[tag_index]
+
         #transpose from NCHW to NHWC then to Tensor and normalized
         video = (video.transpose(0,2,3,1)/255  - cupy.array([0.485, 0.456, 0.406]))/cupy.array([0.229, 0.224, 0.225])
         video = video.transpose(3,0,1,2) # from THWC to CTHW then stack to NCTHW for 3D conv.
         np_video = cupy.asnumpy(video)
         del video
         del loader
-        return nd.array(np_video),nd.array(label)
+        return nd.array(np_video),nd.array(scene_label),action_label # video,multi_label and single action_label
 
 
-def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame=32,crop_size=112,scale_w=128,scale_h=171,cache_size=20):
+def get_meitu_multi_task_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame=32,crop_size=112,scale_w=128,scale_h=171,cache_size=20):
     train_label_file = os.path.join(data_dir,'DatasetLabels/short_video_trainingset_annotations.txt.082902')
     global same_shape
     if same_shape:
@@ -192,19 +205,19 @@ def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame
                                train=False,
                                device_id=device_id,
                                cache_size=cache_size)
-    if __name__=='__main__':
+    #if __name__=='__main__':
         # print the video name for decoder error
-        index = [8*3199,3219*8]
-        for i in range(12812,12816):
-            try:
-                print(i)
-                video = val_dataset[i]
-            except Exception as e:
-                print(e)
-                print("the index is ",i,"file name",val_dataset.clip_list[i])
-        print(val_dataset.clip_list[12814])
-        print('finishd')
-        exit(0)
+        # index = [8*3199,3219*8]
+        # for i in range(12812,12816):
+        #     try:
+        #         print(i)
+        #         video = val_dataset[i]
+        #     except Exception as e:
+        #         print(e)
+        #         print("the index is ",i,"file name",val_dataset.clip_list[i])
+        # print(val_dataset.clip_list[12814])
+        # print('finishd')
+        # exit(0)
     # if __name__=='__main__':
     #     # come to debug mode
     #     import time
@@ -216,26 +229,31 @@ def get_meitu_dataloader(data_dir,device_id=0,batch_size=2,num_workers=0,n_frame
     print("the nvvl dataset loader unit test number of workers is ",num_workers)
     train_loader = DataLoader(train_dataset,batch_size=batch_size,shuffle=True,num_workers=num_workers,last_batch='discard')
     val_loader = DataLoader(val_dataset,batch_size=batch_size,shuffle=False,num_workers=num_workers,last_batch='discard')
-    return train_loader,val_loader
+    sample_weight = [341,264,559,159,105,673,8128,9528,5462,814,269,356,439,510,395,390,348,8447,290,322,484,278,452,\
+                     2502,76,84,440,909,841,779,297,242,275,332,421,350,326,393,327,484,213,488,340,436]
+    print('sample shape',len(sample_weight))
+    return train_loader,val_loader,sample_weight
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='this is a dataset test parser')
     parser.add_argument('--data_dir',type=str,default='/data/jh/notebooks/hudengjun/VideosFamous/FastVideoTagging/meitu',help='this is the meitu root directory')
+    parser.add_argument('--gpus',type=int,default=0,help='the decoder gpus id')
     args = parser.parse_args()
     same_shape = False
-    train_loader,val_loader = get_meitu_dataloader(data_dir=args.data_dir,
-                                                    device_id=0,
+    train_loader,val_loader,sample_weight = get_meitu_dataloader(data_dir=args.data_dir,
+                                                    device_id=args.gpus,
                                                    batch_size=4,
                                                    num_workers=0,
-                                                   n_frame=32,
+                                                   n_frame=16,
                                                    crop_size=112,
                                                    scale_w=128,
                                                    scale_h=128)
-    for i,(batch_data,batch_label) in enumerate(train_loader):
+    for i,(batch_data,scene_label,action_label) in enumerate(val_loader):
         print('batch_data shape',batch_data.shape)
-        print('batch_label shape',batch_label.shape)
-        if i==600:
+        print('batch_label shape',scene_label)
+        print('action_label',action_label)
+        if i==10:
             print("test the dataloader")
             break
 

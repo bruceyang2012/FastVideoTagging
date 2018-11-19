@@ -21,9 +21,11 @@ logger = logging.getLogger(__name__)
 # val_data = '/data/jh/notebooks/hudengjun/meitu/videos/val_collection'
 # train_label = '/data/jh/notebooks/hudengjun/meitu/DatasetLabels/shor-xxxx.txt'
 
+
+#scale size all reshape to 136
 class SimpleMeitu(Dataset):
     def __init__(self,datadir,n_frame=32,crop_size=112,
-                 scale_w=171,scale_h=128,train=True,transform=None):
+                 scale_w=171,scale_h=128,train=True,mode='dense',transform=None):
         super(SimpleMeitu,self).__init__()
         self.datadir = datadir
         self.n_frame = n_frame
@@ -32,6 +34,7 @@ class SimpleMeitu(Dataset):
         self.scale_h = scale_h
         self.is_train = train
         self.clip_lst = []
+        self.mode = 'dense' # other like average,key_frames.
         self._transform = transform
         self.max_label =0
         self.load_list()
@@ -53,7 +56,9 @@ class SimpleMeitu(Dataset):
                 labels = [int(id) for id in vid_info[1:]]
                 self.max_label = max(self.max_label,max(labels))
                 self.clip_lst.append((file_name,labels))
-        logger.info("load data from %s,num_clip_List %d"%(self.datadir,len(self.clip_lst)))
+            self.max_label = self.max_label +1
+
+        logger.info("load data from %s,num_clip_List %d,label_size is %d"%(self.datadir,len(self.clip_lst),self.max_label))
 
     def __len__(self):
         return len(self.clip_lst)
@@ -66,7 +71,11 @@ class SimpleMeitu(Dataset):
             return None
         cthw_data = None
         nd_image_list = []
+        fisrt_try = True
         while len(nd_image_list) is 0:
+            if not fisrt_try:
+                index +=1
+                filename,labels = self.clip_lst[index]
             v = cv2.VideoCapture(filename)
             width = v.get(cv2.CAP_PROP_FRAME_WIDTH)
             height= v.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -106,9 +115,10 @@ class SimpleMeitu(Dataset):
                     f=f[row_st:row_st + self.crop_size, col_st:col_st + self.crop_size, :]
                     if self._transform:
                         nd_image_list.append(self._transform(nd.array(f))) # the frame_p transform
-
                 else:
+                    print("fuck the clear")
                     nd_image_list.clear() #clear the image_list
+                    fisrt_try = False
                     break
         # after transform return CHW dim
         # replication the last frame if the length < self.n_frame
@@ -163,10 +173,27 @@ if __name__=='__main__':
                         transform=train_transform)
     data = train_data[0]
 
+    val_data = SimpleMeitu(datadir='/data/jh/notebooks/hudengjun/meitu',n_frame=32,
+                           crop_size=112,
+                           scale_h=128,
+                           scale_w=171,
+                           train=False,
+                           transform=train_transform)
+
+    import ipdb
+
+    ipdb.set_trace()
+    data = val_data[3023]
+    #print(val_data.clip_lst[3023])
 
     train_loader,val_loader = get_simple_meitu_dataloader(datadir='/data/jh/notebooks/hudengjun/meitu',n_frame=32,crop_size=112,
                                                           scale_h=128,scale_w=171,num_workers=6)
     for i,(data,label) in enumerate(train_loader):
         print(data.shape)
         print(label.shape)
+        break
 
+    for i in range(739*4,769*4):
+        data = val_data[i]
+        print("index",i,data[0].shape,data[1].shape)
+        break

@@ -54,7 +54,6 @@ class LSEP_funcLoss(autograd.Function):
         return grad_input,mx.nd.ones(target.shape[0], ctx=target.context)
 
 
-
 class LsepLoss(nn.Block):
     """this is the loss function implemented :
     Imporve pairwise Ranking for multi-label image classification"""
@@ -84,6 +83,28 @@ class LsepLoss(nn.Block):
         # print("the mat mul is ",nd.broadcast_mul(pos,neg)*dist)
         # print("-----------------------")
         loss_matrix = nd.log(1 + nd.sum(nd.broadcast_mul(pos,neg)* nd.exp(-dist)))
+        return loss_matrix
+
+
+class LsepLossHy(nn.HybridBlock):
+    """this is the loss function implemented :
+    Imporve pairwise Ranking for multi-label image classification"""
+    def __init__(self,batch_size=4,num_class=63):
+        super(LsepLossHy,self).__init__()
+        self.batch=batch_size
+        self.dim = num_class
+
+    def hybrid_forward(self, F,pred,target):
+        """
+        pred is the output prob,target the multi-class set label
+        """
+        base = mx.sym.zeros_like(data=target, name='basic')
+        dist = F.broadcast_minus(mx.sym.Reshape(pred,shape=(self.batch,self.dim,1)),mx.sym.Reshape(pred,shape=(self.batch,1,self.dim)))
+        pos = mx.sym.Reshape(F.broadcast_greater(target,base),shape=(self.batch,self.dim,1))
+        neg = mx.sym.Reshape(F.broadcast_equal(target,base),shape=(self.batch,1,self.dim))
+        # pos.detach()
+        # neg.detach()
+        loss_matrix = F.log(1 + F.sum(F.broadcast_mul(pos,neg)* F.exp(-dist)))
         return loss_matrix
 
 class WarpLoss(nn.Block):

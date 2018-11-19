@@ -8,4 +8,5 @@ ipdb
 tqdm
 gluonbook
 argparse
+visdom
 
